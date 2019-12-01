@@ -30,9 +30,9 @@ envoy_cc_library(
     hdrs = ["data_filter.h"],
     repository = "@envoy",
     deps = [
-        "//external:data_filter_config_cc_proto",
         "@envoy//include/envoy/http:filter_interface",
         "@envoy//source/common/network:application_protocol_lib",
+        "@envoy//source/common/router:string_accessor_lib",
         "@envoy//source/extensions/filters/http/common:pass_through_filter_lib",
     ],
 )
@@ -49,5 +49,6 @@ envoy_cc_library(
         "@envoy//include/envoy/registry",
         "@envoy//source/exe:envoy_common_lib",
         "@envoy//source/extensions/filters/http/common:factory_base_lib",
+        "@envoy//source/extensions/filters/http/common:empty_http_filter_config_lib",
     ],
 )

@@ -13,31 +13,68 @@
  * limitations under the License.
  */
 
-#include "src/envoy/http/alpn/data_filter.h"
-#include "src/envoy/http/data/data_filter.pb.h"
+#include "src/envoy/http/data/data_filter.h"
 #include "common/network/application_protocol.h"
 #include "envoy/upstream/cluster_manager.h"
+#include "envoy/network/connection.h"
+#include "common/router/string_accessor_impl.h"
 
 namespace Envoy {
 namespace Http {
 namespace Data {
 
-DataTracingFilterConfig::DataTracingFilterConfig(
-    const data::FilterConfig
-        &proto_config,
-    Upstream::ClusterManager &cluster_manager)
-    : cluster_manager_(cluster_manager) {
+std::string StringMap::get(std::string key) {
+    m_.lock();
+    std::string value = "";
+    if(map_.find(key) != map_.end()) {
+        value = map_[key];
+    }
+    m_.unlock();
+    return value;
+}
 
+void StringMap::put(std::string key, std::string value) {
+    m_.lock();
+    map_[key] = value;
+    m_.unlock();
+}
+
+bool StringMap::del(std::string key) {
+    m_.lock();
+    bool found = false;
+    if(map_.find(key) != map_.end()) {
+        map_.erase(key);
+        found = true;
+    }
+    m_.unlock();
+    return found;
 }
 
 Http::FilterHeadersStatus DataTracingFilter::decodeHeaders(Http::HeaderMap &, bool) {
-  return Http::FilterHeadersStatus::Continue;
-}
+    std::string connection_id = std::to_string(decoder_callbacks_->connection()->id());
+    ENVOY_LOG(warn, "DataTracing::OnRequest::Connection::{}", connection_id);
+    decoder_callbacks_->streamInfo().filterState().setData(connection_id,
+            std::make_unique<Router::StringAccessorImpl>(connection_id),
+            StreamInfo::FilterState::StateType::Mutable);
+    ENVOY_LOG(warn, "DataTracing::OnRequest::SetFilterState");
 
-Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &, bool) {
+    ENVOY_LOG(warn, "DataTracing::OnRequest::GetGlobal::{}", map_->get("key"));
+    map_->put("key", "value");
     return Http::FilterHeadersStatus::Continue;
 }
 
-}  // namespace Dataa
+Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &, bool) {
+    std::string connection_id = std::to_string(encoder_callbacks_->connection()->id());
+    ENVOY_LOG(warn, "DataTracing::OnResponse::Connection::{}", connection_id);
+    if (encoder_callbacks_->streamInfo().filterState().hasData<Router::StringAccessorImpl>(connection_id)) {
+        ENVOY_LOG(warn, "DataTracing::OnResponse::Hit");
+    } else {
+        ENVOY_LOG(warn, "DataTracing::OnResponse::Miss");
+    }
+    ENVOY_LOG(warn, "DataTracing::OnResponse::GetGlobal::{}", map_->get("key"));
+    return Http::FilterHeadersStatus::Continue;
+}
+
+}  // namespace Data
 }  // namespace Http
 }  // namespace Envoy

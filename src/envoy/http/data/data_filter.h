@@ -15,7 +15,6 @@
 
 #pragma once
 
-#include "src/envoy/http/data/data_filter.pb.h"
 #include "extensions/filters/http/common/pass_through_filter.h"
 
 namespace Envoy {
@@ -24,35 +23,47 @@ namespace Data {
 
 class DataTracingFilterConfig {
  public:
-  DataTracingFilterConfig(
-      const data::FilterConfig
-          &proto_config,
-      Upstream::ClusterManager &cluster_manager);
-
-  Upstream::ClusterManager &clusterManager() { return cluster_manager_; }
-
- private:
-
-  Upstream::ClusterManager &cluster_manager_;
+  DataTracingFilterConfig() {};
 };
 
+class StringMap {
+  public:
+    StringMap() {};
+    std::string get(std::string key);
+    void put(std::string key, std::string value);
+    bool del(std::string key);
+
+  private:
+    std::map<std::string, std::string> map_;
+    std::mutex m_;
+};
+
+using StringMapSharedPtr = std::shared_ptr<StringMap>;
 using DataTracingFilterConfigSharedPtr = std::shared_ptr<DataTracingFilterConfig>;
 
 class DataTracingFilter : public Http::PassThroughFilter,
                    Logger::Loggable<Logger::Id::filter> {
  public:
-  explicit DataTracingFilter(const DataTracingFilterConfigSharedPtr &config)
-      : config_(config) {}
+    DataTracingFilter(const DataTracingFilterConfigSharedPtr &config, const StringMapSharedPtr &map)
+            : map_(map), config_(config) {};
 
-  // Http::PassThroughDecoderFilter
-  Http::FilterHeadersStatus decodeHeaders(Http::HeaderMap &headers,
-                                          bool end_stream) override;
+    // Http::PassThroughDecoderFilter
+    Http::FilterHeadersStatus decodeHeaders(Http::HeaderMap &headers, bool end_stream) override;
+    void setDecoderFilterCallbacks(Http::StreamDecoderFilterCallbacks& callbacks) override {
+        decoder_callbacks_ = &callbacks;
+    };
 
-  // Http::PassThroughEncoderFilter
-  Http::FilterHeadersStatus encodeHeaders(Http::HeaderMap &headers,
-                                          bool end_stream) override;
- private:
-  const DataTracingFilterConfigSharedPtr config_;
+    // Http::PassThroughEncoderFilter
+    Http::FilterHeadersStatus encodeHeaders(Http::HeaderMap &headers, bool end_stream) override;
+    void setEncoderFilterCallbacks(Http::StreamEncoderFilterCallbacks& callbacks) override {
+        encoder_callbacks_ = &callbacks;
+    };
+
+  private:
+    const StringMapSharedPtr map_;
+    const DataTracingFilterConfigSharedPtr config_;
+    Http::StreamDecoderFilterCallbacks* decoder_callbacks_{};
+    Http::StreamEncoderFilterCallbacks* encoder_callbacks_{};
 };
 
 }  // namespace DataTracing

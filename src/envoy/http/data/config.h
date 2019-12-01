@@ -16,6 +16,8 @@
 #pragma once
 
 #include "extensions/filters/http/common/factory_base.h"
+#include "extensions/filters/http/common/empty_http_filter_config.h"
+#include "src/envoy/utils/filter_names.h"
 
 namespace Envoy {
 namespace Http {
@@ -24,26 +26,15 @@ namespace Data {
 /**
  * Config registration for the data filter.
  */
-class DataTracingConfigFactory
-    : public Server::Configuration::NamedHttpFilterConfigFactory {
+class DataTracingFilterFactory
+    : public Extensions::HttpFilters::Common::EmptyHttpFilterConfig {
 
  public:
-  // Server::Configuration::NamedHttpFilterConfigFactory
-  Http::FilterFactoryCb createFilterFactory(
-      const Json::Object &config, const std::string &stat_prefix,
-      Server::Configuration::FactoryContext &context) override;
+    DataTracingFilterFactory() : Extensions::HttpFilters::Common::EmptyHttpFilterConfig(Utils::IstioFilterName::kData) {}
 
-  Http::FilterFactoryCb createFilterFactoryFromProto(
-      const Protobuf::Message &config, const std::string &stat_prefix,
-      Server::Configuration::FactoryContext &context) override;
+    Http::FilterFactoryCb createFilter(const std::string& stats_prefix,
+                                       Server::Configuration::FactoryContext& context) override;
 
-  ProtobufTypes::MessagePtr createEmptyConfigProto() override;
-
-  std::string name() override;
-
- private:
-  Http::FilterFactoryCb createFilterFactory(
-      Upstream::ClusterManager &cluster_manager);
 };
 
 }  // namespace Data

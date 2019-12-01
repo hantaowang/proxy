@@ -96,6 +96,7 @@ RUN = $(CONTAINER_CLI) run -t -i --sig-proxy=true -u $(UID):$(GID) --rm \
 	-e TARGET_OS="$(TARGET_OS)" \
 	-e TARGET_OUT="$(TARGET_OUT)" \
 	-e USER="${USER}" \
+	-e HOME="${HOME}" \
 	$(ENV_VARS) \
 	-v /etc/passwd:/etc/passwd:ro \
 	$(DOCKER_SOCKET_MOUNT) \
@@ -103,6 +104,7 @@ RUN = $(CONTAINER_CLI) run -t -i --sig-proxy=true -u $(UID):$(GID) --rm \
 	--mount type=bind,source="$(PWD)",destination="/work" \
 	--mount type=volume,source=go,destination="/go" \
 	--mount type=volume,source=gocache,destination="/gocache" \
+	--mount type=bind,source="${HOME}/.cache",destination="${HOME}/.cache" \
 	$(DOCKER_CREDS_MOUNT) \
 	-w /work $(IMG)
 
