@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package data;
+
+message FilterConfig {
+    bool unused = 1;
+}
