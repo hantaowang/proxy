@@ -31,7 +31,7 @@ DataTracingFilterFactory::createFilter(const std::string& stats_prefix,
 
     DataTracingFilterConfigSharedPtr config =
             std::make_shared<DataTracingFilterConfig>();
-    StringMapSharedPtr map = std::make_shared<StringMap>();
+    ThreadSafeStringMapSharedPtr map = std::make_shared<ThreadSafeStringMap>();
     return [config, map](Http::FilterChainFactoryCallbacks& callbacks) -> void {
         callbacks.addStreamFilter(std::make_shared<DataTracingFilter>(config, map));
     };

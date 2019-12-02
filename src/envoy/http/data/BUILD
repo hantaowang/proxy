@@ -31,6 +31,7 @@ envoy_cc_library(
     repository = "@envoy",
     deps = [
         "@envoy//include/envoy/http:filter_interface",
+        "@envoy//include/envoy/http:header_map_interface",
         "@envoy//source/common/network:application_protocol_lib",
         "@envoy//source/common/router:string_accessor_lib",
         "@envoy//source/extensions/filters/http/common:pass_through_filter_lib",

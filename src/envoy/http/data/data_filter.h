@@ -26,25 +26,36 @@ class DataTracingFilterConfig {
   DataTracingFilterConfig() {};
 };
 
-class StringMap {
+class ThreadSafeStringMap {
   public:
-    StringMap() {};
+    ThreadSafeStringMap() {};
     std::string get(std::string key);
+
+    // Sets a Key Value pair
     void put(std::string key, std::string value);
+
+    // Performs a put iff the key exists
+    bool update(std::string key, std::string value);
+
+    // Performs a put iff the key doesnt exist
+    bool create(std::string key, std::string value);
+
+    // Deletes an existing key
     bool del(std::string key);
 
   private:
+    std::string _unsafe_get(std::string key);
     std::map<std::string, std::string> map_;
     std::mutex m_;
 };
 
-using StringMapSharedPtr = std::shared_ptr<StringMap>;
+using ThreadSafeStringMapSharedPtr = std::shared_ptr<ThreadSafeStringMap>;
 using DataTracingFilterConfigSharedPtr = std::shared_ptr<DataTracingFilterConfig>;
 
 class DataTracingFilter : public Http::PassThroughFilter,
                    Logger::Loggable<Logger::Id::filter> {
  public:
-    DataTracingFilter(const DataTracingFilterConfigSharedPtr &config, const StringMapSharedPtr &map)
+    DataTracingFilter(const DataTracingFilterConfigSharedPtr &config, const ThreadSafeStringMapSharedPtr &map)
             : map_(map), config_(config) {};
 
     // Http::PassThroughDecoderFilter
@@ -60,7 +71,7 @@ class DataTracingFilter : public Http::PassThroughFilter,
     };
 
   private:
-    const StringMapSharedPtr map_;
+    const ThreadSafeStringMapSharedPtr map_;
     const DataTracingFilterConfigSharedPtr config_;
     Http::StreamDecoderFilterCallbacks* decoder_callbacks_{};
     Http::StreamEncoderFilterCallbacks* encoder_callbacks_{};
