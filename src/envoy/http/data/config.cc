@@ -22,6 +22,8 @@ namespace Envoy {
 namespace Http {
 namespace Data {
 
+ThreadSafeStringMapSharedPtr map = std::make_shared<ThreadSafeStringMap>();
+
 Http::FilterFactoryCb
 DataTracingFilterFactory::createFilter(const std::string& stats_prefix,
                                 Server::Configuration::FactoryContext& context) {
@@ -31,8 +33,7 @@ DataTracingFilterFactory::createFilter(const std::string& stats_prefix,
 
     DataTracingFilterConfigSharedPtr config =
             std::make_shared<DataTracingFilterConfig>();
-    ThreadSafeStringMapSharedPtr map = std::make_shared<ThreadSafeStringMap>();
-    return [config, map](Http::FilterChainFactoryCallbacks& callbacks) -> void {
+    return [config](Http::FilterChainFactoryCallbacks& callbacks) -> void {
         callbacks.addStreamFilter(std::make_shared<DataTracingFilter>(config, map));
     };
 }

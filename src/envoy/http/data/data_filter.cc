@@ -18,6 +18,7 @@
 #include "envoy/upstream/cluster_manager.h"
 #include "envoy/network/connection.h"
 #include "envoy/http/header_map.h"
+#include "envoy/network/connection.h"
 #include "common/router/string_accessor_impl.h"
 
 namespace Envoy {
@@ -86,41 +87,46 @@ Http::FilterHeadersStatus DataTracingFilter::decodeHeaders(Http::HeaderMap &head
 
     const HeaderEntry* request_entry = headers.get(Envoy::Http::LowerCaseString("x-request-id"));
     if (request_entry != nullptr) {
+        std::string request_id = view_to_string(request_entry->value().getStringView());
         std::string connection_id = std::to_string(decoder_callbacks_->connection()->id());
-        ENVOY_LOG(warn, "DataTracing:OnRequest:Received with x-request-id {} and connection {}",
-                  view_to_string(request_entry->value().getStringView()), connection_id);
+        ENVOY_LOG(info, "DataTracing:OnRequest:Received with x-request-id {} and connection {}",
+                  request_id, connection_id);
 
         // Global mapping from trace / request ID to parent connection
         // only puts if no entry for the trace already exists
-        map_->create("PARENT-" + view_to_string(request_entry->value().getStringView()), connection_id);
+        map_->create("PARENT-" + request_id, connection_id);
+
+        // Mapping for the uninitialized data field
+        map_->create("DATA-" + request_id, "none");
 
         // Stream local mapping from connection ID to trace ID
         encoder_callbacks_->streamInfo().filterState().setData(connection_id,
                 std::make_unique<Router::StringAccessorImpl>(request_entry->value().getStringView()),
                 StreamInfo::FilterState::StateType::Mutable);
 
-        const HeaderEntry* data_entry = headers.get(Envoy::Http::LowerCaseString("x-data"));
+        HeaderEntry* data_entry = headers.get(Envoy::Http::LowerCaseString("x-data"));
         if (data_entry != nullptr) {
-            ENVOY_LOG(warn, "DataTracing:OnRequest: x-request-id {} has data {}",
-                      view_to_string(request_entry->value().getStringView()),
-                      view_to_string(data_entry->value().getStringView()));
+            std::string data_contents = view_to_string(data_entry->value().getStringView());
+            ENVOY_LOG(info, "DataTracing:OnRequest: x-request-id {} has data {}",
+                      request_id, data_contents);
 
             // Save global mapping from trace ID to data label
-            map_->put("DATA-" + view_to_string(request_entry->value().getStringView()),
-                    view_to_string(data_entry->value().getStringView()));
+            map_->put("DATA-" + request_id, data_contents);
 
         } else {
-            ENVOY_LOG(warn, "DataTracing:OnRequest: x-request-id {} has no data", connection_id);
+            ENVOY_LOG(info, "DataTracing:OnRequest: x-request-id {} has no data", request_id);
 
             // Load existing data labels for trace from global map
             // For the case where the user has not propagated the x-data header
-            std::string data = std::string(map_->get(view_to_string(request_entry->value().getStringView())));
-            if (data.length()) {
-                headers.addCopy(Envoy::Http::LowerCaseString("x-data"), data);
+            std::string data_contents = map_->get("DATA-" + request_id);
+            if (data_contents.length() && data_contents != "none") {
+                ENVOY_LOG(info, "DataTracing:OnRequest: x-request-id {} had existing data {} loaded",
+                        request_id, data_contents);
+                headers.addCopy(Envoy::Http::LowerCaseString("x-data"), data_contents);
             }
         }
     } else {
-        ENVOY_LOG(warn, "DataTracing:OnRequest:Skipped an HTTP request with no x-request-id");
+        ENVOY_LOG(info, "DataTracing:OnRequest:Skipped an HTTP request with no x-request-id");
     }
     return Http::FilterHeadersStatus::Continue;
 }
@@ -129,7 +135,7 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
     std::string connection_id = std::to_string(decoder_callbacks_->connection()->id());
     if (!encoder_callbacks_->streamInfo().filterState().hasData<Router::StringAccessorImpl>(connection_id)) {
         // There is no trace associated with this connection
-        ENVOY_LOG(warn, "DataTracing:OnResponse:Received an HTTP response with no x-request-id and connection {}",
+        ENVOY_LOG(info, "DataTracing:OnResponse:Received an HTTP response with no x-request-id and connection {}",
                   connection_id);
         return Http::FilterHeadersStatus::Continue;
     }
@@ -139,25 +145,24 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
     const HeaderEntry* data_entry = headers.get(Envoy::Http::LowerCaseString("x-data"));
 
     if (is_parent) {
-        ENVOY_LOG(warn, "DataTracing:OnResponse:Received parent with x-request-id {} and connection {}",
+        ENVOY_LOG(info, "DataTracing:OnResponse:Received parent with x-request-id {} and connection {}",
                   trace_id, connection_id);
 
         // This is a response to the initial parent HTTP request
         if (data_entry != nullptr) {
             // The parent response already has a data label, so the responder is overriding
             // with internal label management.
-            ENVOY_LOG(warn, "DataTracing:OnResponse: x-request-id {} is overriding the x-data entry",
+            ENVOY_LOG(info, "DataTracing:OnResponse: x-request-id {} is overriding the x-data entry",
                     trace_id);
         } else {
             // The parent response does not have data tagged, so we will tag it if its been set
             std::string data = map_->get("DATA-" + trace_id);
-            if (data.length()) {
-                ENVOY_LOG(warn, "DataTracing:OnResponse: x-request-id {} is being tagged with data",
-
+            if (data.length() && data != "none") {
+                ENVOY_LOG(info, "DataTracing:OnResponse: x-request-id {} is being tagged with data",
                         trace_id);
                 headers.addCopy(Envoy::Http::LowerCaseString("x-data"), data);
             } else {
-                ENVOY_LOG(warn, "DataTracing:OnResponse: x-request-id {} has no data to tag",
+                ENVOY_LOG(info, "DataTracing:OnResponse: x-request-id {} has no data to tag",
                         trace_id);
             }
         }
@@ -167,17 +172,25 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
         map_->del("PARENT-" + trace_id);
     } else {
         // This is a response to an outbound request
-        ENVOY_LOG(warn, "DataTracing:OnResponse:Received child with x-request-id {} and connection {}",
+        ENVOY_LOG(info, "DataTracing:OnResponse:Received child with x-request-id {} and connection {}",
                   trace_id, connection_id);
         if (data_entry != nullptr) {
             // A data label is connected to this outbound response, so we should save it
             // No chance for memory leak because update is only performed iff the trace exists
-            ENVOY_LOG(warn, "DataTracing:OnResponse: x-request-id {} has data to save", trace_id);
-            map_->update("DATA-" + trace_id, view_to_string(data_entry->value().getStringView()));
+            ENVOY_LOG(info, "DataTracing:OnResponse: x-request-id {} has data to save", trace_id);
+
+            std::string data_contents = view_to_string(data_entry->value().getStringView());
+            if (data_contents == "1") {
+                // Privileged content arrived at an unprivileged service
+                encoder_callbacks_->streamInfo()->response_code_ = 500;
+                return Http::FilterHeadersStatus::StopIteration;
+            }
+
+            map_->update("DATA-" + trace_id, data_contents);
         } else {
             // There is no data label connected with this outbound response
             // Therefore there is nothing to save for the current trace
-            ENVOY_LOG(warn, "DataTracing:OnResponse: x-request-id {} has no data to save", trace_id);
+            ENVOY_LOG(info, "DataTracing:OnResponse: x-request-id {} has no data to save", trace_id);
         }
     }
     return Http::FilterHeadersStatus::Continue;
