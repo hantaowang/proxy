@@ -30,7 +30,9 @@ envoy_cc_library(
     hdrs = ["data_filter.h"],
     repository = "@envoy",
     deps = [
-        ":config_lib",
+        ":map_lib",
+        ":labels_lib",
+        "//src/istio/data:data_filter_proto_cc_proto",
         "@envoy//include/envoy/http:filter_interface",
         "@envoy//include/envoy/http:header_map_interface",
         "@envoy//include/envoy/network:connection_interface",
@@ -47,10 +49,34 @@ envoy_cc_library(
     repository = "@envoy",
     visibility = ["//visibility:public"],
     deps = [
+        ":data_filter",
+        ":map_lib",
+        "//src/istio/data:data_filter_proto_cc_proto",
         "//src/envoy/utils:filter_names_lib",
         "@envoy//include/envoy/registry",
         "@envoy//source/exe:envoy_common_lib",
         "@envoy//source/extensions/filters/http/common:factory_base_lib",
         "@envoy//source/extensions/filters/http/common:empty_http_filter_config_lib",
+    ],
+)
+
+envoy_cc_library(
+    name = "map_lib",
+    srcs = ["map.cc"],
+    hdrs = ["map.h"],
+    repository = "@envoy",
+    visibility = ["//visibility:public"],
+    deps = [
+            "@envoy//source/common/router:string_accessor_lib",
+    ],
+)
+
+envoy_cc_library(
+    name = "labels_lib",
+    hdrs = ["labels.h"],
+    repository = "@envoy",
+    visibility = ["//visibility:public"],
+    deps = [
+            "@envoy//source/common/router:string_accessor_lib",
     ],
 )

@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package data;
+
+message FilterConfig {
+
+  enum Operation {
+    SKIP = 0;
+    ADD = 1;
+    REMOVE = 2;
+    CHECK_INCLUDE = 3;
+    CHECK_EXCLUDE = 4;
+  }
+
+  message Action {
+    Operation operation = 1;
+    string member = 2;
+  }
+
+  repeated Action actions = 1;
+}

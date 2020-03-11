@@ -14,26 +14,40 @@
  */
 
 #include "common/protobuf/message_validator_impl.h"
-#include "src/envoy/http/data/data_filter.h"
 #include "src/envoy/http/data/config.h"
+#include "src/envoy/http/data/data_filter.h"
+#include "src/envoy/http/data/map.h"
 #include "src/envoy/utils/filter_names.h"
 
 namespace Envoy {
 namespace Http {
 namespace Data {
 
-ThreadSafeStringMapSharedPtr map = std::make_shared<ThreadSafeStringMap>();
+Http::FilterFactoryCb
+DataTracingFilterFactory::createFilterFactory(
+        const Json::Object &config, const std::string &stat_prefix,
+        Server::Configuration::FactoryContext &context) {
+    data::FilterConfig filter_config;
+    (void) stat_prefix;
+    ENVOY_LOG(warn, "Create from JSON");
+    MessageUtil::loadFromJson(config.asJsonString(), filter_config,
+                              ProtobufMessage::getNullValidationVisitor());
+    return createFilterFactory(filter_config, context.clusterManager());
+}
 
 Http::FilterFactoryCb
 DataTracingFilterFactory::createFilterFactoryFromProto(
-        const Protobuf::Message &config, const std::string &,
-        Server::Configuration::FactoryContext &context) {
-    return createFilterFactory(dynamic_cast<const data::FilterConfig &>(config));
+    const Protobuf::Message &config, const std::string &stat_prefix,
+    Server::Configuration::FactoryContext &context) {
+    (void) stat_prefix;
+    ENVOY_LOG(warn, "Create from proto");
+    return createFilterFactory(dynamic_cast<const data::FilterConfig &>(config), context.clusterManager());
 }
 
 ProtobufTypes::MessagePtr
 DataTracingFilterFactory::createEmptyConfigProto() {
-    return ProtobufTypes::MessagePtr{new data::FilterConfig};
+    ENVOY_LOG(warn, "Create from empty");
+    return ProtobufTypes::MessagePtr{new data::FilterConfig()};
 }
 
 std::string
@@ -42,12 +56,19 @@ DataTracingFilterFactory::name() {
 }
 
 Http::FilterFactoryCb
-DataTracingFilterFactory::createFilterFactory(const data::FilterConfig &proto_config) {
-    DataTracingFilterConfigSharedPtr filter_config = std::make_shared<DataTracingFilterConfig>(proto_config);
+DataTracingFilterFactory::createFilterFactory(const data::FilterConfig &proto_config,
+                                              Upstream::ClusterManager &cluster_manager) {
+    (void) cluster_manager;
+    ENVOY_LOG(warn, "Config in Constructor: {}", proto_config.DebugString());
 
-    return [config](Http::FilterChainFactoryCallbacks& callbacks) -> void {
-        callbacks.addStreamFilter(std::make_shared<DataTracingFilter>(filter_config, map));
+    DataTracingFilterConfigSharedPtr filter_config =
+            std::make_shared<DataTracingFilterConfig>(proto_config);
+
+    return [filter_config](Http::FilterChainFactoryCallbacks& callbacks) -> void {
+        callbacks.addStreamFilter(std::make_unique<DataTracingFilter>(
+                filter_config, dataMap));
     };
+
 }
 
 /**

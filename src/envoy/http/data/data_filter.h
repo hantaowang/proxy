@@ -16,37 +16,55 @@
 #pragma once
 
 #include "extensions/filters/http/common/pass_through_filter.h"
-#include "src/envoy/http/data/config.h"
+#include "src/envoy/http/data/map.h"
+#include "src/istio/data/data_filter.pb.h"
 
 namespace Envoy {
 namespace Http {
 namespace Data {
 
-class ThreadSafeStringMap {
-  public:
-    ThreadSafeStringMap() {};
-    std::string get(std::string key);
+class DataTracingFilterConfig {
+public:
+    DataTracingFilterConfig(const data::FilterConfig &proto_config) {
+        _size = proto_config.actions_size();
+        _operations = new data::FilterConfig_Operation[_size];
+        _members = new std::string[_size];
+        for (int i = 0; i < _size; i++) {
+            _operations[i] = proto_config.actions(i).operation();
+            _members[i] = proto_config.actions(i).member();
+        }
+    };
 
-    // Sets a Key Value pair
-    void put(std::string key, std::string value);
+    data::FilterConfig_Operation getOperation(int i) {
+        return _operations[i];
+    }
 
-    // Performs a put iff the key exists
-    bool update(std::string key, std::string value);
+    std::string getMember(int i) {
+        return _members[i];
+    }
 
-    // Performs a put iff the key doesnt exist
-    bool create(std::string key, std::string value);
+    int size() {
+        return _size;
+    }
 
-    // Deletes an existing key
-    bool del(std::string key);
+private:
 
-  private:
-    std::string _unsafe_get(std::string key);
-    std::map<std::string, std::string> map_;
-    std::mutex m_;
+    data::FilterConfig_Operation *_operations;
+    std::string *_members;
+    int _size;
+
 };
 
 using ThreadSafeStringMapSharedPtr = std::shared_ptr<ThreadSafeStringMap>;
+
 using DataTracingFilterConfigSharedPtr = std::shared_ptr<DataTracingFilterConfig>;
+
+class DataPolicyResults {
+
+public:
+    Http::FilterHeadersStatus status;
+    std::string data;
+};
 
 class DataTracingFilter : public Http::PassThroughFilter,
                    Logger::Loggable<Logger::Id::filter> {
@@ -56,24 +74,28 @@ class DataTracingFilter : public Http::PassThroughFilter,
 
     // Http::PassThroughDecoderFilter
     Http::FilterHeadersStatus decodeHeaders(Http::HeaderMap &headers, bool end_stream) override;
+
     void setDecoderFilterCallbacks(Http::StreamDecoderFilterCallbacks& callbacks) override {
         decoder_callbacks_ = &callbacks;
     };
 
     // Http::PassThroughEncoderFilter
     Http::FilterHeadersStatus encodeHeaders(Http::HeaderMap &headers, bool end_stream) override;
+
     void setEncoderFilterCallbacks(Http::StreamEncoderFilterCallbacks& callbacks) override {
         encoder_callbacks_ = &callbacks;
     };
 
-    const DataTracingFilterConfigSharedPtr config_;
+    const ThreadSafeStringMapSharedPtr map_;
+    const DataTracingFilterConfigSharedPtr &config_;
 
   private:
-    const ThreadSafeStringMapSharedPtr map_;
     Http::StreamDecoderFilterCallbacks* decoder_callbacks_{};
     Http::StreamEncoderFilterCallbacks* encoder_callbacks_{};
+
+    DataPolicyResults* apply_policy_functions(std::string data_contents);
 };
 
-}  // namespace DataTracing
+}  // namespace Data
 }  // namespace Http
 }  // namespace Envoy
