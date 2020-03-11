@@ -25,16 +25,28 @@ namespace Data {
 ThreadSafeStringMapSharedPtr map = std::make_shared<ThreadSafeStringMap>();
 
 Http::FilterFactoryCb
-DataTracingFilterFactory::createFilter(const std::string& stats_prefix,
-                                Server::Configuration::FactoryContext& context) {
-    // Hide unused params
-    (void) stats_prefix;
-    (void) context;
+DataTracingFilterFactory::createFilterFactoryFromProto(
+        const Protobuf::Message &config, const std::string &,
+        Server::Configuration::FactoryContext &context) {
+    return createFilterFactory(dynamic_cast<const data::FilterConfig &>(config));
+}
 
-    DataTracingFilterConfigSharedPtr config =
-            std::make_shared<DataTracingFilterConfig>();
+ProtobufTypes::MessagePtr
+DataTracingFilterFactory::createEmptyConfigProto() {
+    return ProtobufTypes::MessagePtr{new data::FilterConfig};
+}
+
+std::string
+DataTracingFilterFactory::name() {
+    return Utils::IstioFilterName::kData;
+}
+
+Http::FilterFactoryCb
+DataTracingFilterFactory::createFilterFactory(const data::FilterConfig &proto_config) {
+    DataTracingFilterConfigSharedPtr filter_config = std::make_shared<DataTracingFilterConfig>(proto_config);
+
     return [config](Http::FilterChainFactoryCallbacks& callbacks) -> void {
-        callbacks.addStreamFilter(std::make_shared<DataTracingFilter>(config, map));
+        callbacks.addStreamFilter(std::make_shared<DataTracingFilter>(filter_config, map));
     };
 }
 

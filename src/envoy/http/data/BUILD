@@ -30,6 +30,7 @@ envoy_cc_library(
     hdrs = ["data_filter.h"],
     repository = "@envoy",
     deps = [
+        ":config_lib",
         "@envoy//include/envoy/http:filter_interface",
         "@envoy//include/envoy/http:header_map_interface",
         "@envoy//include/envoy/network:connection_interface",
@@ -46,7 +47,6 @@ envoy_cc_library(
     repository = "@envoy",
     visibility = ["//visibility:public"],
     deps = [
-        ":data_filter",
         "//src/envoy/utils:filter_names_lib",
         "@envoy//include/envoy/registry",
         "@envoy//source/exe:envoy_common_lib",

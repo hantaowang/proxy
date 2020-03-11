@@ -16,15 +16,11 @@
 #pragma once
 
 #include "extensions/filters/http/common/pass_through_filter.h"
+#include "src/envoy/http/data/config.h"
 
 namespace Envoy {
 namespace Http {
 namespace Data {
-
-class DataTracingFilterConfig {
- public:
-  DataTracingFilterConfig() {};
-};
 
 class ThreadSafeStringMap {
   public:
@@ -70,9 +66,10 @@ class DataTracingFilter : public Http::PassThroughFilter,
         encoder_callbacks_ = &callbacks;
     };
 
+    const DataTracingFilterConfigSharedPtr config_;
+
   private:
     const ThreadSafeStringMapSharedPtr map_;
-    const DataTracingFilterConfigSharedPtr config_;
     Http::StreamDecoderFilterCallbacks* decoder_callbacks_{};
     Http::StreamEncoderFilterCallbacks* encoder_callbacks_{};
 };

@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package data;
+
+message FilterConfig {
+
+  enum Operation {
+    UNION = 0;
+    INTERSECTION = 1;
+    DIFFERENCE = 2;
+  }
+
+  message Action {
+    Operation operation = 1;
+    repeated string members = 2;
+  }
+
+  repeated Action actions = 2;
+}
