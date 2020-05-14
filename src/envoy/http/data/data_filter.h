@@ -28,15 +28,21 @@ public:
     DataTracingFilterConfig(const data::FilterConfig &proto_config) {
         _size = proto_config.actions_size();
         _operations = new data::FilterConfig_Operation[_size];
+        _whens = new data::FilterConfig_When[_size];
         _members = new std::string[_size];
         for (int i = 0; i < _size; i++) {
             _operations[i] = proto_config.actions(i).operation();
+            _whens[i] = proto_config.actions(i).when();
             _members[i] = proto_config.actions(i).member();
         }
     };
 
     data::FilterConfig_Operation getOperation(int i) {
         return _operations[i];
+    }
+
+    data::FilterConfig_When getWhen(int i) {
+        return _whens[i];
     }
 
     std::string getMember(int i) {
@@ -50,6 +56,7 @@ public:
 private:
 
     data::FilterConfig_Operation *_operations;
+    data::FilterConfig_When *_whens;
     std::string *_members;
     int _size;
 
@@ -93,7 +100,7 @@ class DataTracingFilter : public Http::PassThroughFilter,
     Http::StreamDecoderFilterCallbacks* decoder_callbacks_{};
     Http::StreamEncoderFilterCallbacks* encoder_callbacks_{};
 
-    DataPolicyResults* apply_policy_functions(std::string data_contents);
+    DataPolicyResults* apply_policy_functions(std::string data_contents, data::FilterConfig_When when);
 };
 
 }  // namespace Data

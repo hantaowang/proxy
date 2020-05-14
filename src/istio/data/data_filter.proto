@@ -12,9 +12,15 @@ message FilterConfig {
     CHECK_EXCLUDE = 4;
   }
 
+  enum When {
+    INBOUND = 0;
+    OUTBOUND = 1;
+  }
+
   message Action {
     Operation operation = 1;
-    string member = 2;
+    When when = 2;
+    string member = 3;
   }
 
   repeated Action actions = 1;

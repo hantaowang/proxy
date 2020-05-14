@@ -32,33 +32,35 @@ std::string view_to_string(absl::string_view view) {
     return std::string(view.data(), view.length());
 }
 
-DataPolicyResults* DataTracingFilter::apply_policy_functions(std::string data_contents) {
+DataPolicyResults* DataTracingFilter::apply_policy_functions(std::string data_contents, data::FilterConfig_When when) {
     LabelSet l = LabelSet(data_contents, DELIM);
     DataPolicyResults *results = new DataPolicyResults{};
     ENVOY_LOG(warn, "Config has size {}", config_->size());
     for (int i = 0; i < config_->size(); i++) {
         ENVOY_LOG(warn, "Operation: {}, Member: {}", config_->getOperation(i), config_->getMember(i));
-        switch (config_->getOperation(i)) {
-            case data::FilterConfig::ADD:
-                l.put(config_->getMember(i));
-                break;
-            case data::FilterConfig::REMOVE:
-                l.remove(config_->getMember(i));
-                break;
-            case data::FilterConfig::CHECK_INCLUDE:
-                if (!l.contains(config_->getMember(i))) {
-                    results->status = Http::FilterHeadersStatus::StopIteration;
-                    return results;
-                }
-                break;
-            case data::FilterConfig::CHECK_EXCLUDE:
-                if (l.contains(config_->getMember(i))) {
-                    results->status = Http::FilterHeadersStatus::StopIteration;
-                    return results;
-                }
-                break;
-            default:
-                break;
+        if (config_->getWhen(i) == when) {
+            switch (config_->getOperation(i)) {
+                case data::FilterConfig::ADD:
+                    l.put(config_->getMember(i));
+                    break;
+                case data::FilterConfig::REMOVE:
+                    l.remove(config_->getMember(i));
+                    break;
+                case data::FilterConfig::CHECK_INCLUDE:
+                    if (!l.contains(config_->getMember(i))) {
+                        results->status = Http::FilterHeadersStatus::StopIteration;
+                        return results;
+                    }
+                    break;
+                case data::FilterConfig::CHECK_EXCLUDE:
+                    if (l.contains(config_->getMember(i))) {
+                        results->status = Http::FilterHeadersStatus::StopIteration;
+                        return results;
+                    }
+                    break;
+                default:
+                    break;
+            }
         }
     }
 
@@ -85,7 +87,13 @@ Http::FilterHeadersStatus DataTracingFilter::decodeHeaders(Http::HeaderMap &head
         map_->create("PARENT-" + request_id, connection_id);
 
         // Mapping for the uninitialized data field
-        map_->create("DATA-" + request_id, DEFAULT_NO_DATA);
+        bool new_mapping = map_->create("DATA-" + request_id, DEFAULT_NO_DATA);
+
+        // Set flag if this is new inbound parent request or outbound child request
+        data::FilterConfig_When when = data::FilterConfig::INBOUND;
+        if (!new_mapping) {
+            when = data::FilterConfig::OUTBOUND;
+        }
 
         // Stream local mapping from connection ID to trace ID
         encoder_callbacks_->streamInfo().filterState().setData(connection_id,
@@ -106,7 +114,7 @@ Http::FilterHeadersStatus DataTracingFilter::decodeHeaders(Http::HeaderMap &head
             std::string data_contents = map_->get("DATA-" + request_id);
         }
 
-        DataPolicyResults *results = apply_policy_functions(data_contents);
+        DataPolicyResults *results = apply_policy_functions(data_contents, when);
         if (results->status ==  Http::FilterHeadersStatus::StopIteration) {
             decoder_callbacks_->resetStream();
             delete results;
@@ -157,7 +165,7 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
             std::string data = map_->get("DATA-" + trace_id);
         }
 
-        DataPolicyResults *results = apply_policy_functions(data_contents);
+        DataPolicyResults *results = apply_policy_functions(data_contents, data::FilterConfig::OUTBOUND);
         if (results->status ==  Http::FilterHeadersStatus::StopIteration) {
             encoder_callbacks_->resetStream();
             delete results;
@@ -175,6 +183,7 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
         // This is a response to an outbound request
         ENVOY_LOG(warn, "DataTracing:OnResponse:Received child with x-request-id {} and connection {}",
                   trace_id, connection_id);
+
         if (data_entry != nullptr) {
             // A data label is connected to this outbound response, so we should save it
             // No chance for memory leak because update is only performed iff the trace exists
@@ -188,7 +197,7 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
             data_contents = DEFAULT_NO_DATA;
         }
 
-        DataPolicyResults *results = apply_policy_functions(data_contents);
+        DataPolicyResults *results = apply_policy_functions(data_contents, data::FilterConfig::INBOUND);
         if (results->status ==  Http::FilterHeadersStatus::StopIteration) {
             encoder_callbacks_->resetStream();
             delete results;
