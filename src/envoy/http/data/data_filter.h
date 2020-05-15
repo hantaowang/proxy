@@ -17,7 +17,10 @@
 
 #include "extensions/filters/http/common/pass_through_filter.h"
 #include "src/envoy/http/data/map.h"
+#include "src/envoy/http/data/labels.h"
 #include "src/istio/data/data_filter.pb.h"
+#include "envoy/http/header_map.h"
+#include "envoy/network/connection.h"
 
 namespace Envoy {
 namespace Http {
@@ -35,7 +38,38 @@ public:
             _whens[i] = proto_config.actions(i).when();
             _members[i] = proto_config.actions(i).member();
         }
-    };
+    }
+
+    DataTracingFilterConfig(std::string overrides) {
+        _size = std::count(overrides.begin(), overrides.end(), ';') + 1;
+        _operations = new data::FilterConfig_Operation[_size];
+        _whens = new data::FilterConfig_When[_size];
+        _members = new std::string[_size];
+        size_t pos = 0;
+        int count = 0;
+        std::string s = overrides;
+        std::string token;
+        std::string *_opStrings = new std::string[_size];
+        while ((pos = s.find(DELIM)) != std::string::npos) {
+            token = s.substr(0, pos);
+            _opStrings[count] = token.substr(0, token.find("("));
+            _members[count] = token.substr(token.find("(") + 1, token.length() - 1);
+            count++;
+        }
+        _opStrings[count] = s.substr(0, s.find("("));
+        _members[count] = s.substr(s.find("(") + 1, s.length() - 1);
+        for (int i = 0; i < _size; i++) {
+            if (_opStrings[i] == "ADD") {
+                _operations[i] = data::FilterConfig::ADD;
+            } else if (_opStrings[i] == "REMOVE") {
+                _operations[i] = data::FilterConfig::REMOVE;
+            } else if (_opStrings[i] == "CHECK_INCLUDE") {
+                _operations[i] = data::FilterConfig::CHECK_INCLUDE;
+            } else if (_opStrings[i] == "CHECK_EXCLUDE") {
+                _operations[i] =  data::FilterConfig::CHECK_EXCLUDE;
+            }
+        }
+    }
 
     data::FilterConfig_Operation getOperation(int i) {
         return _operations[i];
@@ -54,7 +88,6 @@ public:
     }
 
 private:
-
     data::FilterConfig_Operation *_operations;
     data::FilterConfig_When *_whens;
     std::string *_members;
@@ -100,7 +133,9 @@ class DataTracingFilter : public Http::PassThroughFilter,
     Http::StreamDecoderFilterCallbacks* decoder_callbacks_{};
     Http::StreamEncoderFilterCallbacks* encoder_callbacks_{};
 
-    DataPolicyResults* apply_policy_functions(std::string data_contents, data::FilterConfig_When when);
+    DataPolicyResults* apply_policy_functions(std::string data_contents, data::FilterConfig_When when, std::string overrides);
+    Http::FilterHeadersStatus apply_function(LabelSet *l, data::FilterConfig_Operation op, std::string member);
+
 };
 
 }  // namespace Data

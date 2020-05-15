@@ -32,45 +32,66 @@ std::string view_to_string(absl::string_view view) {
     return std::string(view.data(), view.length());
 }
 
-DataPolicyResults* DataTracingFilter::apply_policy_functions(std::string data_contents, data::FilterConfig_When when) {
-    LabelSet l = LabelSet(data_contents, DELIM);
+DataPolicyResults* DataTracingFilter::apply_policy_functions(std::string data_contents, data::FilterConfig_When when, std::string overrides) {
+    LabelSet *l = new LabelSet(data_contents, DELIM);
     DataPolicyResults *results = new DataPolicyResults{};
     ENVOY_LOG(warn, "Config has size {}", config_->size());
     for (int i = 0; i < config_->size(); i++) {
         ENVOY_LOG(warn, "Operation: {}, Member: {}", config_->getOperation(i), config_->getMember(i));
         if (config_->getWhen(i) == when) {
-            switch (config_->getOperation(i)) {
-                case data::FilterConfig::ADD:
-                    l.put(config_->getMember(i));
-                    break;
-                case data::FilterConfig::REMOVE:
-                    l.remove(config_->getMember(i));
-                    break;
-                case data::FilterConfig::CHECK_INCLUDE:
-                    if (!l.contains(config_->getMember(i))) {
-                        results->status = Http::FilterHeadersStatus::StopIteration;
-                        return results;
-                    }
-                    break;
-                case data::FilterConfig::CHECK_EXCLUDE:
-                    if (l.contains(config_->getMember(i))) {
-                        results->status = Http::FilterHeadersStatus::StopIteration;
-                        return results;
-                    }
-                    break;
-                default:
-                    break;
+            if (apply_function(l, config_->getOperation(i), config_->getMember(i))
+                    == Http::FilterHeadersStatus::StopIteration) {
+                results->status = Http::FilterHeadersStatus::StopIteration;
+                delete l;
+                return results;
+            }
+        }
+    }
+    if (overrides.length() > 0) {
+        DataTracingFilterConfig dfov = DataTracingFilterConfig(overrides);
+        for (int i = 0; i < dfov.size(); i++) {
+            ENVOY_LOG(warn, "Applying Override Operation: {}, Member: {}", dfov.getOperation(i), dfov.getMember(i));
+            if (apply_function(l, dfov.getOperation(i), dfov.getMember(i))
+                    == Http::FilterHeadersStatus::StopIteration) {
+                results->status = Http::FilterHeadersStatus::StopIteration;
+                delete l;
+                return results;
             }
         }
     }
 
-    if (l.size() == 0) {
+    if (l->size() == 0) {
         results->data =  DEFAULT_NO_DATA;
     } else {
-        results->data = l.toString();
+        results->data = l->toString();
     }
+    delete l;
     results->status = Http::FilterHeadersStatus::Continue;
     return results;
+}
+
+Http::FilterHeadersStatus DataTracingFilter::apply_function(LabelSet *l, data::FilterConfig_Operation op, std::string member) {
+    switch (op) {
+        case data::FilterConfig::ADD:
+            l->put(member);
+            break;
+        case data::FilterConfig::REMOVE:
+            l->remove(member);
+            break;
+        case data::FilterConfig::CHECK_INCLUDE:
+            if (!l->contains(member)) {
+                return Http::FilterHeadersStatus::StopIteration;
+            }
+            break;
+        case data::FilterConfig::CHECK_EXCLUDE:
+            if (l->contains(member)) {
+                return Http::FilterHeadersStatus::StopIteration;
+            }
+            break;
+        default:
+            break;
+    }
+    return Http::FilterHeadersStatus::Continue;
 }
 
 Http::FilterHeadersStatus DataTracingFilter::decodeHeaders(Http::HeaderMap &headers, bool) {
@@ -114,7 +135,7 @@ Http::FilterHeadersStatus DataTracingFilter::decodeHeaders(Http::HeaderMap &head
             std::string data_contents = map_->get("DATA-" + request_id);
         }
 
-        DataPolicyResults *results = apply_policy_functions(data_contents, when);
+        DataPolicyResults *results = apply_policy_functions(data_contents, when, "");
         if (results->status ==  Http::FilterHeadersStatus::StopIteration) {
             decoder_callbacks_->resetStream();
             delete results;
@@ -165,7 +186,7 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
             std::string data = map_->get("DATA-" + trace_id);
         }
 
-        DataPolicyResults *results = apply_policy_functions(data_contents, data::FilterConfig::OUTBOUND);
+        DataPolicyResults *results = apply_policy_functions(data_contents, data::FilterConfig::OUTBOUND, "");
         if (results->status ==  Http::FilterHeadersStatus::StopIteration) {
             encoder_callbacks_->resetStream();
             delete results;
@@ -197,7 +218,7 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
             data_contents = DEFAULT_NO_DATA;
         }
 
-        DataPolicyResults *results = apply_policy_functions(data_contents, data::FilterConfig::INBOUND);
+        DataPolicyResults *results = apply_policy_functions(data_contents, data::FilterConfig::INBOUND, "");
         if (results->status ==  Http::FilterHeadersStatus::StopIteration) {
             encoder_callbacks_->resetStream();
             delete results;
