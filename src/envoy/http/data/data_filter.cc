@@ -97,6 +97,7 @@ Http::FilterHeadersStatus DataTracingFilter::apply_function(LabelSet *l, data::F
 Http::FilterHeadersStatus DataTracingFilter::decodeHeaders(Http::HeaderMap &headers, bool) {
 
     const HeaderEntry* request_entry = headers.get(Envoy::Http::LowerCaseString("x-request-id"));
+
     if (request_entry != nullptr) {
         std::string request_id = view_to_string(request_entry->value().getStringView());
         std::string connection_id = std::to_string(decoder_callbacks_->connection()->id());
@@ -123,7 +124,7 @@ Http::FilterHeadersStatus DataTracingFilter::decodeHeaders(Http::HeaderMap &head
 
         HeaderEntry* data_entry = headers.get(Envoy::Http::LowerCaseString("x-data"));
         std::string data_contents;
-        if (data_entry != nullptr) {
+        if (data_entry != nullptr && view_to_string(data_entry->value().getStringView()).length() > 0) {
             data_contents = view_to_string(data_entry->value().getStringView());
             ENVOY_LOG(warn, "DataTracing:OnRequest: x-request-id {} has data {}",
                       request_id, data_contents);
@@ -135,7 +136,15 @@ Http::FilterHeadersStatus DataTracingFilter::decodeHeaders(Http::HeaderMap &head
             std::string data_contents = map_->get("DATA-" + request_id);
         }
 
-        DataPolicyResults *results = apply_policy_functions(data_contents, when, "");
+        // Find any override methods i.e. ADD(label), REMOVE(label), etc
+        const HeaderEntry* override_entry = headers.get(Envoy::Http::LowerCaseString("x-data-override"));
+        std::string override_methods;
+        if (override_entry != nullptr) {
+            override_methods = view_to_string(override_entry->value().getStringView());
+            headers.remove(Envoy::Http::LowerCaseString("x-data-override"));
+        }
+
+        DataPolicyResults *results = apply_policy_functions(data_contents, when, override_methods);
         if (results->status ==  Http::FilterHeadersStatus::StopIteration) {
             decoder_callbacks_->resetStream();
             delete results;
@@ -144,6 +153,7 @@ Http::FilterHeadersStatus DataTracingFilter::decodeHeaders(Http::HeaderMap &head
 
         ENVOY_LOG(warn, "DataTracing:OnRequest: x-request-id {} had labels {} loaded",
                   request_id, results->data);
+        headers.remove(Envoy::Http::LowerCaseString("x-data"));
         headers.addCopy(Envoy::Http::LowerCaseString("x-data"), results->data);
 
         // Save global mapping from trace ID to data label
@@ -170,12 +180,20 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
     const HeaderEntry* data_entry = headers.get(Envoy::Http::LowerCaseString("x-data"));
     std::string data_contents;
 
+    // Find any override methods i.e. ADD(label), REMOVE(label), etc
+    const HeaderEntry* override_entry = headers.get(Envoy::Http::LowerCaseString("x-data-override"));
+    std::string override_methods;
+    if (override_entry != nullptr) {
+        override_methods = view_to_string(override_entry->value().getStringView());
+        headers.remove(Envoy::Http::LowerCaseString("x-data-override"));
+    }
+
     if (is_parent) {
         ENVOY_LOG(warn, "DataTracing:OnResponse:Received parent with x-request-id {} and connection {}",
                   trace_id, connection_id);
 
         // This is a response to the initial parent HTTP request
-        if (data_entry != nullptr) {
+        if (data_entry != nullptr && view_to_string(data_entry->value().getStringView()).length() > 0) {
             // The parent response already has a data label, so the responder is overriding
             // with internal label management.
             ENVOY_LOG(warn, "DataTracing:OnResponse: x-request-id {} is overriding the x-data entry",
@@ -183,10 +201,12 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
             data_contents = view_to_string(data_entry->value().getStringView());
         } else {
             // The parent response does not have data tagged, so we will tag it if its been set
-            std::string data = map_->get("DATA-" + trace_id);
+            data_contents = map_->get("DATA-" + trace_id);
         }
 
-        DataPolicyResults *results = apply_policy_functions(data_contents, data::FilterConfig::OUTBOUND, "");
+
+
+        DataPolicyResults *results = apply_policy_functions(data_contents, data::FilterConfig::OUTBOUND, override_methods);
         if (results->status ==  Http::FilterHeadersStatus::StopIteration) {
             encoder_callbacks_->resetStream();
             delete results;
@@ -195,6 +215,7 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
 
         ENVOY_LOG(warn, "DataTracing:OnResponse: x-request-id {} had labels {} loaded",
                   trace_id, results->data);
+        headers.remove(Envoy::Http::LowerCaseString("x-data"));
         headers.addCopy(Envoy::Http::LowerCaseString("x-data"), results->data);
 
         // Garbage collect all KVs associated with the trace, as its over
@@ -205,7 +226,7 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
         ENVOY_LOG(warn, "DataTracing:OnResponse:Received child with x-request-id {} and connection {}",
                   trace_id, connection_id);
 
-        if (data_entry != nullptr) {
+        if (data_entry != nullptr && view_to_string(data_entry->value().getStringView()).length() > 0) {
             // A data label is connected to this outbound response, so we should save it
             // No chance for memory leak because update is only performed iff the trace exists
             data_contents = view_to_string(data_entry->value().getStringView());
@@ -218,7 +239,7 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
             data_contents = DEFAULT_NO_DATA;
         }
 
-        DataPolicyResults *results = apply_policy_functions(data_contents, data::FilterConfig::INBOUND, "");
+        DataPolicyResults *results = apply_policy_functions(data_contents, data::FilterConfig::INBOUND, override_methods);
         if (results->status ==  Http::FilterHeadersStatus::StopIteration) {
             encoder_callbacks_->resetStream();
             delete results;
@@ -227,8 +248,8 @@ Http::FilterHeadersStatus DataTracingFilter::encodeHeaders(Http::HeaderMap &head
 
         ENVOY_LOG(warn, "DataTracing:OnResponse: x-request-id {} had labels {} loaded",
                   trace_id, results->data);
+        headers.remove(Envoy::Http::LowerCaseString("x-data"));
         headers.addCopy(Envoy::Http::LowerCaseString("x-data"), results->data);
-
         map_->update("DATA-" + trace_id, results->data);
     }
     return Http::FilterHeadersStatus::Continue;

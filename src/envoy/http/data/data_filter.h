@@ -53,11 +53,11 @@ public:
         while ((pos = s.find(DELIM)) != std::string::npos) {
             token = s.substr(0, pos);
             _opStrings[count] = token.substr(0, token.find("("));
-            _members[count] = token.substr(token.find("(") + 1, token.length() - 1);
+            _members[count] = token.substr(token.find("(") + 1, token.length() - token.find("(") - 2);
             count++;
         }
         _opStrings[count] = s.substr(0, s.find("("));
-        _members[count] = s.substr(s.find("(") + 1, s.length() - 1);
+        _members[count] = s.substr(s.find("(") + 1, s.length() - s.find("(") - 2);
         for (int i = 0; i < _size; i++) {
             if (_opStrings[i] == "ADD") {
                 _operations[i] = data::FilterConfig::ADD;

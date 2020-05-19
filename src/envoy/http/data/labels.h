@@ -37,10 +37,14 @@ public:
         std::string token;
         while ((pos = s.find(delim)) != std::string::npos) {
             token = s.substr(0, pos);
-            _labels.insert(token);
+            if (token != DEFAULT_NO_DATA) {
+                _labels.insert(token);
+            }
             s.erase(0, pos + delim.length());
         }
-        _labels.insert(s);
+        if (s.length() > 0 && s != DEFAULT_NO_DATA) {
+            _labels.insert(s);
+        }
     };
 
     bool contains(std::string key) {
